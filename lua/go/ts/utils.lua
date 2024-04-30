@@ -140,8 +140,15 @@ function M.list_definitions_toc(bufnr)
   }
 
   local parents = {}
-
   local regx = [[func\s\+(\(\w\+\s\+\)*[*]*\(\w\+\))\s\+\(\w\+\)(]]
+
+  -- FIXME
+  -- 1. docs are all screwy when you hover
+  -- 2. interface function defs aren't properly attached (the appear after NewWhatever())
+  -- 3. there is no distinguising between constants and vars
+  -- 4. interface "arg:" should show as property
+  -- 5. disable all folding - only have folding for sections (which should be added)
+  -- 6. colors
   for idx, def in ipairs(definitions) do
     -- Get indentation level by putting all parents in a stack.
     -- The length of the stack minus one is the current level of indentation.
@@ -166,12 +173,15 @@ function M.list_definitions_toc(bufnr)
     local symbol = get_node_text(def.node, bufnr) or ''
     local text = symbol
 
+    -- print('TYPE: '..vim.inspect(type)..'--->'..text)
+
     local line_before = api.nvim_buf_get_lines(bufnr, lnum - 1, lnum, false)[1]
 
     local hint = {}
     if line_before and not line_before:find('^%s*//') then
       hint = { line_before }
     end
+
     -- go pkg hack
     local line_text = api.nvim_buf_get_lines(bufnr, lnum, lnum + 1, false)[1] or text
 
@@ -201,13 +211,35 @@ function M.list_definitions_toc(bufnr)
       end
     end
     table.insert(hint, line_text)
-    for i = 1, 5 do
-      local line_after = api.nvim_buf_get_lines(bufnr, lnum + i, lnum + i + 1, false)[1]
-      if line_after and line_after:find('^%s*//') then
-        table.insert(hint, line_after)
-      else
-        break
+
+    -- look for docs
+    local i = 1
+    local next_line = api.nvim_buf_get_lines(bufnr, lnum + i, lnum + i + 1, false)[1]
+
+    if next_line == '{{__DOC_START__}}' then
+      i = i + 1
+
+      while true do
+        local l = api.nvim_buf_get_lines(bufnr, lnum + i, lnum + i + 1, false)[1]
+
+        if l == nil or l == '{{__DOC_END__}}' then
+          break
+        end
+
+        -- trim things up
+        l = l:gsub('^//%s*', '')
+
+        -- if idx == 1 then
+        --   print('LINE: '..l)
+        -- end
+
+        table.insert(hint, l)
+        i = i + 1
       end
+    end
+
+    if idx == 1 then
+    print('INSERT: '..text..' --> '..vim.inspect(hint))
     end
     -- log(text, hint)
     table.insert(loc_list, {

@@ -4,16 +4,22 @@ local log = util.log
 local vfn = vim.fn
 local api = vim.api
 
+-- a table of paths (e.g. './...' and the corresponding full package name)
 local path_to_pkg = {}
+
+-- a collection of known packages
 local pkgs = {}
+
 local complete = function(sep)
   log('complete', sep)
   sep = sep or '\n'
+
   local ok, l = golist(false, { util.all_pkgs() })
   if not ok then
     log('Failed to find all packages for current module/project.')
     return
   end
+
   log(l)
   local curpkgmatch = false
   local curpkg = vfn.fnamemodify(vfn.expand('%'), ':h:.')
@@ -131,7 +137,7 @@ local show_panel = function(result, pkg, rerender)
   log('create panel')
   if panel then
     local p = panel:new({
-      header = '  󰏖  ' .. pkg_name .. '   ',
+      header = '❒ ' .. pkg_name,
       render = function(b)
         log('render for ', bufnr, b)
         -- log(debug.traceback())
@@ -227,40 +233,74 @@ local function handle_data_out(_, data, ev)
   end
   pkg_info = {}
   local types = { 'CONSTANTS', 'FUNCTIONS', 'TYPES', 'VARIABLES' }
-  for i, val in ipairs(data) do
-    -- first strip the filename
-    if vim.tbl_contains(types, val) then
-      val = '//' .. val
-    end
+  local pkg_docs = true
+  local in_docs = false
 
-    local sp = string.match(val, '^(%s*)')
-    if sp and #sp == 4 then
-      val = '//' .. val
-    end
-    local f = string.match(val, '^func ')
-    if f then
-      -- incase the func def is mulilines
-      local next_line = data[i + 1]
-      if next_line then
-        local next_sp = string.match(next_line, '^(%s*)') -- one tab in front
-        if next_sp and #next_sp == 1 then -- tab size 1
-          next_line = next_line .. '{}'
-          data[i + 1] = next_line
+  for i, val in ipairs(data) do
+    if i > 1 then
+      -- first strip the filename
+      if vim.tbl_contains(types, val) then
+        if pkg_docs then
+          val = '{{__DOC_END__}}'
+          pkg_docs = false
+        else
+          val = ''
+        end
+      end
+
+      if pkg_docs then
+        val = '//' .. val
+      end
+
+      local sp = string.match(val, '^(%s*)')
+      if sp and #sp == 4 then
+        if not in_docs then
+          table.insert(pkg_info, '{{__DOC_START__}}')
+          in_docs = true
+        end
+        val = '//' .. val
+      else
+        if in_docs then
+          table.insert(pkg_info, '{{__DOC_END__}}')
+          in_docs = false
+        end
+      end
+
+      local f = string.match(val, '^func ')
+      if f then
+        -- incase the func def is mulilines
+        local next_line = data[i + 1]
+        if next_line then
+          local next_sp = string.match(next_line, '^(%s*)') -- one tab in front
+          if next_sp and #next_sp == 1 then -- tab size 1
+            next_line = next_line .. '{}'
+            data[i + 1] = next_line
+          else
+            val = val .. '{}'
+          end
         else
           val = val .. '{}'
         end
-      else
-        val = val .. '{}'
       end
+      table.insert(pkg_info, val)
+    else
+      table.insert(pkg_info, val)
+      table.insert(pkg_info, '{{__DOC_START__}}')
     end
-    -- log(val)
-    table.insert(pkg_info, val)
   end
+
+  local fname = vim.fn.tempname() .. '.txt'
+  print(fname)
+  local uri = vim.uri_from_fname(fname)
+  local bufnr = vim.uri_to_bufnr(uri)
+  vim.fn.writefile(pkg_info, fname)
+
 end
 
 local gen_pkg_info = function(cmd, pkg, arg, rerender)
   log('gen_pkg_info', cmd, pkg, rerender)
   vfn.jobstart(cmd, {
+    stdout_buffered = true,
     on_stdout = handle_data_out,
     on_exit = function(e, data, _)
       if data ~= 0 then
@@ -322,7 +362,16 @@ outline = function(...)
     gen_pkg_info(setup, pkg, arg, re_render)
     return
   end
-  local setup = { 'go', 'doc', '-all', '-u', '-cmd', pkg[1] }
+
+  local current_pkg = path_to_pkg['./...']
+  local setup = { 'go', 'doc', '-all', '-cmd', pkg[1] }
+
+  if current_pkg ~= nil then
+    if current_pkg[1] == pkg[1] then
+      setup = { 'go', 'doc', '-all', '-u', '-cmd', pkg[1] }
+    end
+  end
+
   gen_pkg_info(setup, pkg, arg, re_render)
 end
 
@@ -338,9 +387,19 @@ render = function(bufnr)
     util.log('No package found in current directory.')
     return nil
   end
-  local cmd = { 'go', 'doc', '-all', '-u', '-cmd', pkg[1] }
+
+  local current_pkg = path_to_pkg['./...']
+  local cmd = { 'go', 'doc', '-all', '-cmd', pkg[1] }
+
+  if current_pkg ~= nil then
+    if current_pkg[1] == pkg[1] then
+      cmd = { 'go', 'doc', '-all', '-u', '-cmd', pkg[1] }
+    end
+  end
+
   log('gen_pkg_info', cmd, pkg)
   vfn.jobstart(cmd, {
+    stdout_buffered = true,
     on_stdout = handle_data_out,
     on_exit = function(e, data, _)
       if data ~= 0 then
