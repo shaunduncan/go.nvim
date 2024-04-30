@@ -110,13 +110,6 @@ function M.get_test_path()
   return '.' .. sep .. relative_path
 end
 
-local function richgo(cmd)
-  if cmd[1] == 'go' and vfn.executable('richgo') == 1 then
-    cmd[1] = 'richgo'
-  end
-  return cmd
-end
-
 local function get_test_filebufnr()
   local fn = vfn.expand('%')
   trace(fn)
