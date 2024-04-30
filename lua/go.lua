@@ -269,7 +269,7 @@ end
 
 go.set_test_runner = function(runner)
   --  richgo, go test, richgo, dlv, ginkgo
-  local runners = { 'richgo', 'go', 'richgo', 'ginkgo' } --  dlv
+  local runners = { 'go' } --  dlv
   for _, v in pairs(runners) do
     if v == runner then
       _GO_NVIM_CFG.test_runner = runner
