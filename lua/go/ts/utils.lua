@@ -147,7 +147,7 @@ function M.list_definitions_toc(bufnr)
   -- 2. interface function defs aren't properly attached (the appear after NewWhatever())
   -- 3. there is no distinguising between constants and vars
   -- 4. interface "arg:" should show as property
-  -- 5. disable all folding - only have folding for sections (which should be added)
+  -- 5. disable all folding - only have folding for sections (disabled currently in vimrc)
   -- 6. colors
   for idx, def in ipairs(definitions) do
     -- Get indentation level by putting all parents in a stack.
@@ -239,8 +239,9 @@ function M.list_definitions_toc(bufnr)
     end
 
     if idx == 1 then
-    print('INSERT: '..text..' --> '..vim.inspect(hint))
+      print('INSERT: '..text..' --> '..vim.inspect(hint))
     end
+
     -- log(text, hint)
     table.insert(loc_list, {
       bufnr = bufnr,
