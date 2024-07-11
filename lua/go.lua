@@ -5,7 +5,7 @@ local vfn = vim.fn
 -- Keep this in sync with README.md
 -- Keep this in sync with doc/go.txt
 _GO_NVIM_CFG = {
-  disable_defaults = false, -- either true when true disable all default settings
+  disable_defaults = false, -- true|false when true disable all default settings, user need to set all settings
   go = 'go', -- set to go1.18beta1 if necessary
   goimports = 'gopls', -- if set to 'gopls' will use gopls format, also goimports
   fillstruct = 'gopls',
@@ -54,7 +54,7 @@ _GO_NVIM_CFG = {
     -- virtual text setup
     virtual_text = { spacing = 0, prefix = '■' },
     update_in_insert = false,
-    signs = true,
+    signs = true, -- use a table to configure the signs
   },
   go_input = function()
     if require('go.utils').load_plugin('guihua.lua', 'guihua.gui') then
@@ -68,12 +68,14 @@ _GO_NVIM_CFG = {
     end
     return vim.ui.select
   end,
+  preludes = { -- experimental feature, set to empty to disable; set to function to enable
+    default = function() return {} end,  -- one for all commands
+    GoRun = function() -- the commands to run before GoRun, this override default
+      return {} -- e.g. return {'watchexe', '--restart', '-v', '-e', 'go'}
+      -- so you will run `watchexe --restart -v -e go go run `
+    end
+  },
   -- deprecated setups
-  -- lsp_diag_hdlr = true, -- hook lsp diag handler
-  -- lsp_diag_underline = true,
-  -- -- virtual text setup
-  -- lsp_diag_virtual_text = { spacing = 0, prefix = '■' },
-  -- lsp_diag_signs = true,
   lsp_inlay_hints = {
     enable = true,
     style = 'inlay', -- 'default: inlay', 'eol': show at end of line, 'inlay': show in the middle of the line
@@ -171,6 +173,29 @@ _GO_NVIM_CFG = {
 
 -- TODO: nvim_{add,del}_user_command  https://github.com/neovim/neovim/pull/16752
 
+local function reset_tbl(tbl)
+  for k, _ in pairs(tbl) do
+    if type(tbl[k]) == 'table' then
+      if (vim.islist or vim.tbl_islist)(tbl[k]) then
+        tbl[k] = {}
+      else
+        reset_tbl(tbl[k])
+      end
+    elseif type(tbl[k]) == 'string' then
+      tbl[k] = ''
+    elseif type(tbl[k]) == 'number' then
+      tbl[k] = 0
+    elseif type(tbl[k]) == 'boolean' then
+      tbl[k] = false
+    elseif type(tbl[k]) == 'function' then
+      tbl[k] = function(...) end
+    else
+      tbl[k] = nil
+    end
+  end
+  return tbl
+end
+
 function go.setup(cfg)
   if vim.fn.has('nvim-0.9') == 0 then
     vim.notify('go.nvim master branch requires nvim 0.9', vim.log.levels.WARN)
@@ -199,16 +224,15 @@ function go.setup(cfg)
     vim.notify('go.nvim lsp_diag_signs deprecated, use diagnostic.signs', vim.log.levels.WARN)
   end
   if cfg.disable_defaults then
-    for k, _ in pairs(_GO_NVIM_CFG) do
-      if type(cfg[k]) == 'boolean' then
-        cfg[k] = false
-      end
-      if type(_GO_NVIM_CFG[k]) == 'table' then
-        _GO_NVIM_CFG[k] = {}
-      end
-    end
+    reset_tbl(_GO_NVIM_CFG)
+    _GO_NVIM_CFG.disable_defaults = true
+    _GO_NVIM_CFG.diagnostic = false
   end
   _GO_NVIM_CFG = vim.tbl_deep_extend('force', _GO_NVIM_CFG, cfg)
+
+  if vim.fn.empty(_GO_NVIM_CFG.go) == 1 then
+    vim.notify('go.nvim go binary is not setup', vim.log.levels.ERROR)
+  end
 
   if _GO_NVIM_CFG.max_line_len > 0 and _GO_NVIM_CFG.gofmt ~= 'golines' then
     vim.notify('go.nvim max_line_len only effective when gofmt is golines', vim.log.levels.WARN)

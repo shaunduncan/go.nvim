@@ -39,7 +39,7 @@ local on_attach = function(client, bufnr)
   end
 
   if _GO_NVIM_CFG.lsp_codelens then
-    vim.lsp.codelens.refresh()
+    vim.lsp.codelens.refresh({ bufnr = 0 })
   end
   local keymaps
   if _GO_NVIM_CFG.lsp_keymaps == true then
@@ -179,10 +179,17 @@ end
 local M = {}
 
 function M.client()
-  local clients = vim.lsp.get_active_clients({
+  local f = {
     bufnr = vim.api.nvim_get_current_buf(),
     name = 'gopls',
-  }) or {}
+  }
+
+  local has0_10 = vim.fn.has('nvim-0.10') == 1
+  local clients
+  if not has0_10 then
+    vim.lsp.get_clients = vim.lsp.get_active_clients
+  end
+  clients = vim.lsp.get_clients(f) or {}
   return clients[1]
 end
 
