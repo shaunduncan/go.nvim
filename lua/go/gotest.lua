@@ -27,7 +27,7 @@ local long_opts = {
 
 local sep = require('go.utils').sep()
 local short_opts = 'a:cC:b:fFmn:pst:rv'
-local bench_opts = { '-benchmem', '-cpuprofile', 'profile.out' }
+local bench_opts = { '-test.benchmem', '-test.cpuprofile', 'profile.out' }
 
 local is_windows = utils.is_windows()
 local is_git_shell = is_windows
@@ -228,9 +228,9 @@ local function cmd_builder(path, args)
     end
   elseif bench == true then
     if path ~= '' then
-      table.insert(cmd, '-bench=' .. path)
+      table.insert(cmd, '-test.bench=' .. path)
     else
-      table.insert(cmd, '-bench=.')
+      table.insert(cmd, '-test.bench=.')
     end
     vim.list_extend(cmd, bench_opts)
   else
@@ -447,9 +447,9 @@ local function run_tests_with_ts_node(args, func_node, tblcase_ns)
   end
 
   if func_node.name:find('Bench') then
-    local bench = '-bench=' .. test_name_path
+    local bench = '-test.bench=' .. test_name_path
     for i, v in ipairs(cmd) do
-      if v:find('-bench') then
+      if v:find('-test.bench') then
         cmd[i] = bench
         break
       end
