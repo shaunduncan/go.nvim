@@ -17,6 +17,7 @@ local long_opts = {
   count = 'n',
   tags = 't',
   fuzz = 'f',
+  run = 'r',
   bench = 'b',
   metric = 'm',
   select = 's',
@@ -26,7 +27,8 @@ local long_opts = {
 }
 
 local sep = require('go.utils').sep()
-local short_opts = 'a:cC:b:fFmn:pst:rv'
+-- local short_opts = 'a:cC:b:fFmn:pst:rv'
+local short_opts = 'a:cC:b:fFmn:pst:r:v'
 local bench_opts = { '-test.benchmem', '-test.cpuprofile', 'profile.out' }
 
 local is_windows = utils.is_windows()
@@ -209,6 +211,7 @@ local function cmd_builder(path, args)
     table.insert(cmd, optarg['P'])
   end
 
+  log(optarg)
   if optarg['r'] then
     log('run test', optarg['r'])
     table.insert(cmd, '-test.run')
@@ -254,6 +257,7 @@ local function cmd_builder(path, args)
     table.insert(cmd, '-args')
     table.insert(cmd, optarg['a'])
   end
+  log(cmd, optarg, tags)
   return cmd, optarg, tags
 end
 
@@ -348,7 +352,11 @@ M.test = function(...)
   local fpath = workfolder .. utils.sep() .. '...'
 
   if #reminder > 0 then
-    fpath = reminder[1]
+    -- check if reminder is a directory
+    local r = reminder[1]
+    if string.find(r, '%.%.%.') or vim.fn.isdirectory(r) == 1 then
+      fpath = reminder[1]
+    end
   end
 
   utils.log('fpath :' .. fpath)

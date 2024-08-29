@@ -23,8 +23,8 @@ _GO_NVIM_CFG = {
   verbose = false,
   log_path = vfn.expand('$HOME') .. '/tmp/gonvim.log',
   lsp_cfg = false, -- false: do nothing
-  -- true: apply non-default gopls setup defined in go/lsp.lua
-  -- if lsp_cfg is a table, merge table with with non-default gopls setup in go/lsp.lua, e.g.
+  -- true: apply non-default gopls setup defined in go/gopls.lua
+  -- if lsp_cfg is a table, merge table with with non-default gopls setup in go/gopls.lua, e.g.
   lsp_gofumpt = false, -- true: set default gofmt in gopls format to gofumpt
   lsp_on_attach = nil, -- nil: use on_attach function defined in go/lsp.lua for gopls,
   --      when lsp_cfg is true
@@ -69,13 +69,15 @@ _GO_NVIM_CFG = {
     return vim.ui.select
   end,
   preludes = { -- experimental feature, set to empty to disable; set to function to enable
-    default = function() return {} end,  -- one for all commands
+    default = function()
+      return {}
+    end, -- one for all commands
     GoRun = function() -- the commands to run before GoRun, this override default
       return {} -- e.g. return {'watchexe', '--restart', '-v', '-e', 'go'}
       -- so you will run `watchexe --restart -v -e go go run `
-    end
+    end,
   },
-  -- deprecated setups
+  -- deprecated setups for nvim version < 0.10
   lsp_inlay_hints = {
     enable = true,
     style = 'inlay', -- 'default: inlay', 'eol': show at end of line, 'inlay': show in the middle of the line
@@ -134,7 +136,7 @@ _GO_NVIM_CFG = {
   dap_debug_gui = {}, -- bool|table put your dap-ui setup here set to false to disable
   dap_debug_keymap = true, -- true: use keymap for debugger defined in go/dap.lua
   -- false: do not use keymap in go/dap.lua.  you must define your own.
-  dap_debug_vt = { enabled_commands = true, all_frames = true }, -- bool|table put your dap-virtual-text setup here set to false to disable
+  dap_debug_vt = { enabled = true, enabled_commands = true, all_frames = true }, -- bool|table put your dap-virtual-text setup here set to false to disable
   dap_port = 38697, -- can be set to a number or -1 so go.nvim will pickup a random port
   dap_timeout = 15, --  see dap option initialize_timeout_sec = 15,
   dap_retries = 20, -- see dap option max_retries

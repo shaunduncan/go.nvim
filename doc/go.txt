@@ -168,13 +168,15 @@ COMMANDS                                                     *go-nvim-commands*
                         au Syntax go hi goCoverageCovered guibg=green
                         au Syntax go hi goCoverageUncover guibg=brown
                 augroup end
+
 :GoImports {package_name}                                         *:GoImports*
         Add, modify imports.
 
 :GoBuild {-tags=tagname}{package_name}                            *:GoBuild*
-        Build current package
+        Build the package in the current directory. (|:pwd|)
         -g: build with debug info
         %: build current file
+        %:h: build current package
 
 :GoRun {args}                            *:GoRun*
         equal to "go run " with args. You can also specify -F to run in floaterm
@@ -189,7 +191,8 @@ COMMANDS                                                     *go-nvim-commands*
         -p: test current package
         -t: compile tag
         -a: extra args for test, check `go help testflag` concatenate
-        with '\ ' if there are any spaces or mulitple args
+        with '\ ' if there are any spaces or multiple args
+        -b {build_args}: e.g. `-b -gcflags="all-N\ -l"`
         -n {count}: disable cache -count={count}
         package_name: test package
 
@@ -373,7 +376,6 @@ You can setup go.nvim with following options:
 
 {
   goimports = "gopls", -- if set to 'gopls' will use gopls format, also goimports
-  fillstruct = "gopls",
   gofmt = "gofumpt", -- if set to gopls will use gopls format
   max_line_len = 120,
   tag_transform = false,
