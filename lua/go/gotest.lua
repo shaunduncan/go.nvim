@@ -179,11 +179,21 @@ local function cmd_builder(path, args)
   local tags = M.get_build_tags(args)
 
   log('tags', tags)
-  local cmd = { 'go', 'test' }
+  local cmd = { test_runner or 'go' }
+
+  if cmd[1] == 'go' then
+    table.insert(cmd, 'test')
+  end
+
+  if cmd[1] == 'gotestsum' then
+    table.insert(cmd, '--format')
+    table.insert(cmd, 'testname')
+    table.insert(cmd, '--')
+  end
 
   local run_in_floaterm = optarg['F'] or _GO_NVIM_CFG.run_in_floaterm
   if run_in_floaterm then
-    cmd[1] = test_runner or 'go'
+    -- cmd[1] = test_runner or 'go'
   end
 
   if not empty(tags) then
