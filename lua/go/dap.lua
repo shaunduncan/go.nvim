@@ -1,6 +1,7 @@
 local bind = require('go.keybind')
 local utils = require('go.utils')
 local log = utils.log
+local trace = utils.trace
 local sep = '.' .. utils.sep()
 local getopt = require('go.alt_getopt')
 local dapui_setuped
@@ -22,17 +23,17 @@ local long_opts = {
 local opts = 'tcraRsnpfsbhT:'
 local function help()
   return 'Usage: GoDebug [OPTION]\n'
-    .. 'Options:\n'
-    .. '  -c, --compile         compile\n'
-    .. '  -r, --run             run\n'
-    .. '  -t, --test            run tests\n'
-    .. '  -R, --restart         restart\n'
-    .. '  -s, --stop            stop\n'
-    .. '  -h, --help            display this help and exit\n'
-    .. '  -n, --nearest         debug nearest file\n'
-    .. '  -p, --package         debug package\n'
-    .. '  -f, --file            display file\n'
-    .. '  -b, --breakpoint      set breakpoint'
+      .. 'Options:\n'
+      .. '  -c, --compile         compile\n'
+      .. '  -r, --run             run\n'
+      .. '  -t, --test            run tests\n'
+      .. '  -R, --restart         restart\n'
+      .. '  -s, --stop            stop\n'
+      .. '  -h, --help            display this help and exit\n'
+      .. '  -n, --nearest         debug nearest file\n'
+      .. '  -p, --package         debug package\n'
+      .. '  -f, --file            display file\n'
+      .. '  -b, --breakpoint      set breakpoint'
 end
 
 -- not sure if anyone still use telescope for debug
@@ -57,27 +58,27 @@ local function keybind()
   keys = {
     -- DAP --
     -- run
-    ['r'] = { f = require('go.dap').run, desc = 'run' },
+    ['r'] = { f = require('go.dap').run, desc = 'dap run' },
     ['c'] = { f = require('dap').continue, desc = 'continue' },
     ['n'] = { f = require('dap').step_over, desc = 'step_over' },
     ['s'] = { f = require('dap').step_into, desc = 'step_into' },
     ['o'] = { f = require('dap').step_out, desc = 'step_out' },
     ['S'] = {
       f = function()
-        require('go.dap').stop(true)
+        require('go.dap').stop()
       end,
       desc = 'stop debug session',
     },
-    ['u'] = { f = require('dap').up, desc = 'up' },
-    ['D'] = { f = require('dap').down, desc = 'down' },
+    ['u'] = { f = require('dap').up, desc = 'dap stack up' },
+    ['D'] = { f = require('dap').down, desc = 'dap stack down' },
     ['C'] = { f = require('dap').run_to_cursor, desc = 'run_to_cursor' },
     ['b'] = { f = require('dap').toggle_breakpoint, desc = 'toggle_breakpoint' },
-    ['P'] = { f = require('dap').pause, desc = 'pause' },
+    ['P'] = { f = require('dap').pause, desc = 'dap pause' },
     --
   }
   if _GO_NVIM_CFG.dap_debug_gui then
-    keys['p'] = { f = require('dapui').eval, m = { 'n', 'v' }, desc = 'eval' }
-    keys['K'] = { f = require('dapui').float_element, desc = 'float_element' }
+    keys['p'] = { f = require('dapui').eval, m = { 'n', 'v' }, desc = 'dap eval' }
+    keys['K'] = { f = require('dapui').float_element, desc = 'dapui float_element' }
     keys['B'] = {
       f = function()
         require('dapui').float_element('breakpoints')
@@ -109,10 +110,68 @@ local function keybind()
       desc = "float_element('watches')",
     }
   else
-    keys['p'] = { f = require('dap.ui.widgets').hover, m = { 'n', 'v' }, desc = 'hover' }
+    keys['p'] = { f = require('dap.ui.widgets').hover, m = { 'n', 'v' }, desc = 'dap hover' }
   end
   bind.nvim_load_mapping(keys)
 end
+
+local unmap = function()
+  if not _GO_NVIM_CFG.dap_debug_keymap then
+    return
+  end
+  local unmap_keys = {
+    'r',
+    'c',
+    'n',
+    's',
+    'o',
+    'S',
+    'u',
+    'D',
+    'C',
+    'b',
+    'P',
+    'p',
+    'K',
+    'B',
+    'R',
+    'O',
+    'a',
+    'w',
+  }
+  for _, value in pairs(unmap_keys) do
+    local cmd = 'silent! unmap ' .. value
+    vim.cmd(cmd)
+  end
+
+  vim.cmd([[silent! vunmap p]])
+
+  for _, k in pairs(unmap_keys) do
+    for _, v in pairs(keymaps_backup or {}) do
+      if v.lhs == k then
+        local nr = (v.noremap == 1)
+        local sl = (v.slient == 1)
+        local exp = (v.expr == 1)
+        local mode = v.mode
+        local desc = v.desc or 'go-dap'
+        if v.mode == ' ' then
+          mode = { 'n', 'v' }
+        end
+
+        trace(v)
+        vim.keymap.set(
+          mode,
+          v.lhs,
+          v.rhs or v.callback,
+          { noremap = nr, silent = sl, expr = exp, desc = desc }
+        )
+        -- vim.api.nvim_set_keymap('n', v.lhs, v.rhs, {noremap=nr, silent=sl, expr=exp})
+      end
+    end
+  end
+  keymaps_backup = {}
+end
+
 
 local function get_test_build_tags()
   local get_build_tags = require('go.gotest').get_build_tags
@@ -315,21 +374,21 @@ M.run = function(...)
     return require('dap').toggle_breakpoint()
   end
 
-  local original_select = vim.ui.select
-  vim.ui.select = _GO_NVIM_CFG.go_select()
+  -- local original_select = vim.ui.select
+  -- vim.ui.select = _GO_NVIM_CFG.go_select()
 
   -- testopts = {"test", "nearest", "file", "stop", "restart"}
   log('plugin loaded', mode, optarg)
 
   if optarg['s'] and (optarg['t'] or optarg['r']) then
-    M.stop(false)
+    M.stop()
   elseif optarg['s'] then
-    return M.stop(true)
+    return M.stop()
   end
 
   -- restart
   if optarg['R'] then
-    M.stop(false)
+    M.stop()
     if optarg['t'] then
       mode = 'test'
     else
@@ -354,9 +413,7 @@ M.run = function(...)
   -- e.g. edit and run
   local testfunc
 
-  if not run_cur then
-    keybind()
-  else
+  if run_cur then
     M.stop() -- rerun
     testfunc = require('go.gotest').get_test_func_name()
     if testfunc and not string.find(testfunc.name, '[T|t]est') then
@@ -385,7 +442,13 @@ M.run = function(...)
   }
   dap.adapters.go = function(callback, config)
     if config.request == 'attach' and config.mode == 'remote' and config.host then
-      callback({ type = 'server', host = config.host, port = config.port, options = con_options })
+      callback({
+        type = 'server',
+        host = config.host,
+        port = config.port,
+        options = con_options,
+        enrich_config = _GO_NVIM_CFG.dap_enrich_config,
+      })
       return
     end
     stdout = vim.loop.new_pipe(false)
@@ -442,8 +505,22 @@ M.run = function(...)
     stderr:read_start(onread)
 
     vim.defer_fn(function()
-      callback({ type = 'server', host = host, port = port, options = con_options })
+      callback({
+        type = 'server',
+        host = host,
+        port = port,
+        options = con_options,
+        enrich_config = _GO_NVIM_CFG.dap_enrich_config,
+      })
     end, 1000)
+  end
+
+  dap.listeners.after['event_initialized']['go'] = function()
+    keybind()
+  end
+
+  dap.listeners.after['event_terminated']['go'] = function()
+    unmap()
   end
 
   log(get_test_build_tags())
@@ -453,6 +530,7 @@ M.run = function(...)
     request = 'launch',
     dlvToolPath = vim.fn.exepath('dlv'),
     buildFlags = get_test_build_tags(),
+    outputMode = 'remote',
     options = con_options,
   }
 
@@ -473,7 +551,7 @@ M.run = function(...)
   log(testfunc)
 
   if testfunc then
-    if testfunc.name ~= 'main' then
+    if testfunc.name:lower():find('test') and vim.tbl_isempty(optarg) then
       optarg['t'] = true
     end
   end
@@ -489,15 +567,14 @@ M.run = function(...)
     if tblcase_ns and tblcase_ns.name then
       vim.notify('running test case: ' .. tblcase_ns.name)
       tbl_name = tblcase_ns.name
-      tbl_name = tbl_name:gsub('"', '') -- remove "
+      tbl_name = tbl_name:gsub('"', '')  -- remove "
       tbl_name = tbl_name:gsub(' ', '_') -- remove space
       tbl_name = tbl_name:gsub('/', '//')
       tbl_name = tbl_name:gsub('%(', '\\(')
       tbl_name = tbl_name:gsub('%)', '\\)')
       tbl_name = '/' .. tbl_name
+      log(tbl_name)
     end
-
-    log(tblcase_ns)
 
     dap_cfg.name = dap_cfg.name .. ' test'
     dap_cfg.mode = 'test'
@@ -513,7 +590,7 @@ M.run = function(...)
       end
     end
     dap.configurations.go = { dap_cfg }
-    dap.continue()
+    dap.run(dap_cfg)
   elseif optarg['n'] then
     local ns = require('go.ts.go').get_func_method_node_at_pos()
     if empty(ns) then
@@ -527,21 +604,21 @@ M.run = function(...)
       dap_cfg.args = { '-test.run', '^' .. ns.name }
     end
     dap.configurations.go = { dap_cfg }
-    dap.continue()
+    dap.run(dap_cfg)
   elseif optarg['a'] then
     dap_cfg.name = dap_cfg.name .. ' attach'
     dap_cfg.mode = 'local'
     dap_cfg.request = 'attach'
     dap_cfg.processId = require('dap.utils').pick_process
     dap.configurations.go = { dap_cfg }
-    dap.continue()
+    dap.run(dap_cfg)
   elseif optarg['p'] then
     dap_cfg.name = dap_cfg.name .. ' package'
     dap_cfg.mode = 'test'
     dap_cfg.request = 'launch'
     dap_cfg.program = sep .. '${fileDirname}'
     dap.configurations.go = { dap_cfg }
-    dap.continue()
+    dap.run(dap_cfg)
   elseif run_cur then
     dap_cfg.name = dap_cfg.name .. ' run current'
     dap_cfg.request = 'launch'
@@ -552,7 +629,7 @@ M.run = function(...)
     end
     dap_cfg.program = sep .. '${relativeFileDirname}'
     dap.configurations.go = { dap_cfg }
-    dap.continue()
+    dap.run(dap_cfg)
     -- dap.run_to_cursor()
   elseif cfg_exist then
     log('using launch cfg')
@@ -561,7 +638,21 @@ M.run = function(...)
     for _, cfg in ipairs(dap.configurations.go) do
       cfg.dlvToolPath = vim.fn.exepath('dlv')
     end
-    dap.continue()
+    if #dap.configurations.go == 1 then
+      dap.run(dap.configurations.go[1])
+    else
+      local launch_names = {}
+      for _, cfg in ipairs(dap.configurations.go) do
+        table.insert(launch_names, cfg.name)
+      end
+      local sel = _GO_NVIM_CFG.go_select()
+      sel(launch_names, { prompt = 'which you would like to debug' }, function(name, idx)
+        if idx then
+          vim.notify(string.format('Debug %d: %s', idx or 1, name))
+          dap.run(dap.configurations.go[idx])
+        end
+      end)
+    end
   else -- no args
     log('debug main')
     dap_cfg.program = sep .. '${relativeFileDirname}'
@@ -569,70 +660,13 @@ M.run = function(...)
     dap_cfg.mode = 'debug'
     dap_cfg.request = 'launch'
     dap.configurations.go = { dap_cfg }
-    dap.continue()
+    dap.run(dap_cfg)
   end
   log(dap_cfg, args, optarg)
 
   M.pre_mode = dap_cfg.mode or M.pre_mode
 
-  vim.ui.select = original_select
-end
-
-local unmap = function()
-  if not _GO_NVIM_CFG.dap_debug_keymap then
-    return
-  end
-  local unmap_keys = {
-    'r',
-    'c',
-    'n',
-    's',
-    'o',
-    'S',
-    'u',
-    'D',
-    'C',
-    'b',
-    'P',
-    'p',
-    'K',
-    'B',
-    'R',
-    'O',
-    'a',
-    'w',
-  }
-  for _, value in pairs(unmap_keys) do
-    local cmd = 'silent! unmap ' .. value
-    vim.cmd(cmd)
-  end
-
-  vim.cmd([[silent! vunmap p]])
-
-  for _, k in pairs(unmap_keys) do
-    for _, v in pairs(keymaps_backup or {}) do
-      if v.lhs == k then
-        local nr = (v.noremap == 1)
-        local sl = (v.slient == 1)
-        local exp = (v.expr == 1)
-        local mode = v.mode
-        local desc = v.desc or 'go-dap'
-        if v.mode == ' ' then
-          mode = { 'n', 'v' }
-        end
-
-        log(v)
-        vim.keymap.set(
-          mode,
-          v.lhs,
-          v.rhs or v.callback,
-          { noremap = nr, silent = sl, expr = exp, desc = desc }
-        )
-        -- vim.api.nvim_set_keymap('n', v.lhs, v.rhs, {noremap=nr, silent=sl, expr=exp})
-      end
-    end
-  end
-  keymaps_backup = {}
+  -- vim.ui.select = original_select
 end
 
 M.disconnect_dap = function()
@@ -645,10 +679,7 @@ M.disconnect_dap = function()
   end
 end
 
-M.stop = function(unm)
-  if unm then
-    unmap()
-  end
+M.stop = function()
   M.disconnect_dap()
 
   local has_dapui, dapui = pcall(require, 'dapui')

@@ -5,8 +5,13 @@ local log = require('go.utils').log
 local warn = require('go.utils').warn
 local info = require('go.utils').info
 local debug = require('go.utils').debug
--- debug = log
+local trace = require('go.utils').trace
 
+local api = vim.api
+
+local parsers = require "nvim-treesitter.parsers"
+local utils = require "nvim-treesitter.utils"
+local ts = vim.treesitter
 local M = {
   query_struct = '(type_spec name:(type_identifier) @definition.struct type: (struct_type))',
   query_package = '(package_clause (package_identifier)@package.name)@package.clause',
@@ -108,11 +113,15 @@ local M = {
         literal_value .(
           keyed_element
             (literal_element (identifier))
+            (literal_element (interpreted_string_literal))
+        )
+      ) @test.block
+    ))]],
+  query_tbl_kv_node = [[ (
+          keyed_element
+            (literal_element (identifier) @test.nameid)
             (literal_element (interpreted_string_literal) @test.name)
-         )
-       ) @test.block
-    ))
-  ]],
+        ) @test.kvblock]],
   query_sub_testcase_node = [[ (call_expression
     (selector_expression
       (field_identifier) @method.name)
@@ -122,6 +131,13 @@ local M = {
     (#eq? @method.name "Run")
   ) @tc.run ]],
   query_string_literal = [[((interpreted_string_literal) @string.value)]],
+  ginkgo_query = [[
+  (call_expression
+    function: (identifier) @func_name (#any-of? @func_name "It" "Describe" "Context")
+    arguments: (argument_list
+      (interpreted_string_literal) @test_name
+      (func_literal) @test_body))
+  ]],
 }
 
 local function get_name_defaults()
@@ -184,40 +200,110 @@ M.get_func_method_node_at_pos = function(bufnr)
 
   local ns = nodes.nodes_at_cursor(query, get_name_defaults(), bufn)
   if ns == nil then
+    debug('function not found')
     return nil
   end
-  if ns == nil then
-    warn('function not found')
-  else
-    return ns[#ns]
+  return ns[#ns]
+end
+
+M.is_position_in_node = function(node, row, col)
+  if not row and not col then
+    row, col = unpack(vim.api.nvim_win_get_cursor(0))
+    row = row - 1
   end
+  if not col then
+    col = 0
+  end
+  local start_row, start_col, end_row, end_col = node:range()
+  if row < start_row or (row == start_row and col < start_col) then
+    return false
+  end
+  if row > end_row or (row == end_row and col > end_col) then
+    return false
+  end
+  return true
 end
 
 M.get_tbl_testcase_node_name = function(bufnr)
   local bufn = bufnr or vim.api.nvim_get_current_buf()
-  local ok, parser = pcall(vim.treesitter.get_parser, bufn)
-  if not ok or not parser then
-    return
+  local parser = vim.treesitter.get_parser(bufn, 'go')
+  if not parser then
+    return warn('treesitter parser not found for' .. vim.fn.bufname(bufn))
   end
   local tree = parser:parse()
   tree = tree[1]
 
   local tbl_case_query = vim.treesitter.query.parse('go', M.query_tbl_testcase_node)
+  local tbl_case_kv_query = vim.treesitter.query.parse('go', M.query_tbl_kv_node)
 
   local curr_row, _ = unpack(vim.api.nvim_win_get_cursor(0))
-  for _, match, _ in tbl_case_query:iter_matches(tree:root(), bufn, 0, -1) do
-    local tc_name = nil
-    for id, node in pairs(match) do
-      local name = tbl_case_query.captures[id]
-      -- IDK why test.name is captured before test.block
-      if name == 'test.name' then
-        tc_name = tsutil.get_node_text(node, bufn)[1]
-      end
+  curr_row = curr_row - 1
+  for pattern, match, metadata in tbl_case_query:iter_matches(tree:root(), bufn, 0, -1) do
+    -- first: find the @test.block
+    for id, nodes in pairs(match) do
+      local name = tbl_case_query.captures[id] or tbl_case_query.captures[pattern]
+      local get_tc_block = function(node, range_checker)
+        if name == 'test.block' then
+          local start_row, _, end_row, _ = node:range()
 
-      if name == 'test.block' then
-        local start_row, _, end_row, _ = node:range()
-        if (curr_row >= start_row and curr_row <= end_row) then
-          return tc_name
+          if not range_checker(start_row, end_row, curr_row) then
+            -- no need to check the range
+            return
+          end
+          trace(name, tc_name, start_row, end_row, curr_row)
+          return true
+        end
+      end
+      for _, node in pairs(nodes) do
+
+        local n = get_tc_block(node, function(start_row, end_row, curr_row)
+          if (start_row <= curr_row and curr_row <= end_row) then -- curr_row starts from 1
+            trace('valid node:', node)  -- the nvim manual is out of sync for release version
+            return true -- cursor is in the same line, this is a strong match
+          end
+        end)
+        if n then
+          -- return n
+          local tc_name, guess
+
+          local start_row, _, end_row, _ = node:range()
+          local result = {}
+          -- find kv nodes inside test case struct
+          for pattern2, match2, _ in tbl_case_kv_query:iter_matches(tree:root(), bufn, start_row, end_row+1) do
+            local id
+            for i2, nodes2 in pairs(match2) do
+              local name2 = tbl_case_kv_query.captures[i2] -- or tbl_case_kv_query.captures[pattern2]
+              for i, n2 in pairs(nodes2) do -- the order is abit random
+                -- if name2 == 'test.name' then
+                local start_row2, _, end_row2, _ = n2:range()
+                if name2 == 'test.nameid' then
+                  id =  vim.treesitter.get_node_text(n2, bufn)
+                  if id == 'name' then
+                    result[name2] = id
+                  end
+                elseif name2 == 'test.name' then
+                  local tc_name2 = vim.treesitter.get_node_text(n2, bufn)
+                  if id == 'name' then
+                    log('found node', name2, tc_name2)
+                    tc_name = tc_name2
+                  elseif start_row2 <= curr_row and curr_row <= end_row2 then -- curr_row starts
+                    guess = tc_name2
+                  end
+                else
+                  trace('found node', name2, n2:range())
+                end
+
+                trace('node type name',i2, i, name2, id, start_row2, end_row2, curr_row, tc_name, guess)
+              end
+            end
+          end
+          local testcase = tc_name or guess
+          if testcase then
+            testcase = string.gsub(testcase, '"', '')
+            return testcase
+          else
+            debug('testcase not found')
+          end
         end
       end
     end
@@ -227,12 +313,12 @@ end
 
 M.get_sub_testcase_name = function(bufnr)
   local bufn = bufnr or vim.api.nvim_get_current_buf()
-  local sub_case_query = vim.treesitter.query.parse('go', M.query_sub_testcase_node)
-
-  local ok, parser = pcall(vim.treesitter.get_parser, bufn)
-  if not ok or not parser then
-    return
+  local parser = vim.treesitter.get_parser(bufn, 'go')
+  if not parser then
+    return warn('treesitter parser not found for ' .. vim.fn.bufname(bufn))
   end
+
+  local sub_case_query = vim.treesitter.query.parse('go', M.query_sub_testcase_node)
   local tree = parser:parse()
   tree = tree[1]
 
@@ -243,7 +329,7 @@ M.get_sub_testcase_name = function(bufnr)
     -- tc_run is the first capture of a match, so we can use it to check if we are inside a test
     if name == 'tc.run' then
       local start_row, _, end_row, _ = node:range()
-      if (curr_row >= start_row and curr_row <= end_row) then
+      if (start_row < curr_row  and curr_row <= end_row + 1) then
         is_inside_test = true
       else
         is_inside_test = false
@@ -251,8 +337,8 @@ M.get_sub_testcase_name = function(bufnr)
       goto continue
     end
     if name == 'tc.name' and is_inside_test then
-      local tc_name = tsutil.get_node_text(node, bufn)
-      return tc_name[1]
+
+      return string.gsub(vim.treesitter.get_node_text(node, bufn), '"', '')
     end
     ::continue::
   end
@@ -272,22 +358,40 @@ M.get_string_node = function(bufnr)
 end
 
 M.get_import_node_at_pos = function(bufnr)
-  local bufn = bufnr or vim.api.nvim_get_current_buf()
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
 
-  local cur_node = tsutil.get_node_at_cursor()
+  local cur_node = tsutil.get_node_at_cursor(0, true)
+  if not cur_node then
+    vim.notify('cursor not in a node or TS parser not init correctly', vim.log.levels.INFO)
+    return
+  end
 
-  if cur_node and (cur_node:type() == 'import_spec' or cur_node:parent():type() == 'import_spec') then
+
+  local parent_is_import = function(node)
+    local n = node
+    while n do
+      if n:type() == 'import_spec' then
+        return true
+      end
+      n = n:parent()
+    end
+  end
+
+  if parent_is_import(cur_node) then
     return cur_node
   end
 end
 
 M.get_module_at_pos = function(bufnr)
   local node = M.get_import_node_at_pos(bufnr)
+  log(node)
   if node then
-    local module = require('go.utils').get_node_text(node, vim.api.nvim_get_current_buf())
-    -- log
+    local module = vim.treesitter.get_node_text(node, vim.api.nvim_get_current_buf())
     module = string.gsub(module, '"', '')
+    log('module', vim.inspect(module))
     return module
+  else
+    warn('module not found')
   end
 end
 
@@ -303,9 +407,6 @@ M.get_package_node_at_pos = function(bufnr)
   local bufn = bufnr or vim.api.nvim_get_current_buf()
 
   local ns = nodes.nodes_at_cursor(query, get_name_defaults(), bufn)
-  if ns == nil then
-    return nil
-  end
   if ns == nil then
     warn('package not found')
   else

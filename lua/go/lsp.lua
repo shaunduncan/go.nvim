@@ -68,7 +68,7 @@ local on_attach = function(client, bufnr)
       {
         mode = 'v',
         key = '<space>ca',
-        func = require('go.codeaction').run_range_code_action,
+        func = require('go.codeaction').run_code_action,
         desc = 'range code action',
       },
       { key = 'gr', func = vim.lsp.buf.references, desc = 'references' },
@@ -103,7 +103,7 @@ local on_attach = function(client, bufnr)
   if client.name == 'gopls' then
     local semantic = client.config.capabilities.textDocument.semanticTokens
     local provider = client.server_capabilities.semanticTokensProvider
-    if semantic then
+    if _GO_NVIM_CFG.lsp_semantic_highlights and semantic then
       client.server_capabilities.semanticTokensProvider =
         vim.tbl_deep_extend('force', provider or {}, {
           full = true,
@@ -180,18 +180,17 @@ end
 
 local M = {}
 
-function M.client()
+function M.client(bufnr)
+  -- if current buffer is go/mod etc
+  if not bufnr and vim.tbl_contains({'go', 'gomod', 'gosum'}, vim.o.ft) then
+    bufnr = vim.api.nvim_get_current_buf()
+  end
   local f = {
-    bufnr = vim.api.nvim_get_current_buf(),
+    bufnr = bufnr,
     name = 'gopls',
   }
 
-  local has0_10 = vim.fn.has('nvim-0.10') == 1
-  local clients
-  if not has0_10 then
-    vim.lsp.get_clients = vim.lsp.get_active_clients
-  end
-  clients = vim.lsp.get_clients(f) or {}
+  local clients = vim.lsp.get_clients(f) or {}
   return clients[1]
 end
 
@@ -256,33 +255,34 @@ valueSet = { "", "Empty", "QuickFix", "Refactor", "RefactorExtract", "RefactorIn
 write", "source", "source.organizeImports" }
 ]]
 
-
-
 local function range_args()
-
   local vfn = vim.fn
   if vim.list_contains({ 'i', 'R', 'ic', 'ix' }, vim.fn.mode()) then
     log('v mode required')
     return
   end
   -- get visual selection
-  local start_lnum, start_col= unpack(api.nvim_buf_get_mark(0, '<'))
+  local start_lnum, start_col = unpack(api.nvim_buf_get_mark(0, '<'))
   local end_lnum, end_col = unpack(api.nvim_buf_get_mark(0, '>'))
-  if end_col == 2^31 - 1 then
-    end_col = vfn.strdisplaywidth(vfn.getline(end_lnum))-1
+  if end_col == 2 ^ 31 - 1 then
+    end_col = vfn.strdisplaywidth(vfn.getline(end_lnum)) - 1
   end
   log(start_lnum, start_col, end_lnum, end_col)
 
-  local params = vim.lsp.util.make_range_params()
-  params.range ={
-      start = {
-        line = start_lnum - 1,
-        character = start_col,
-      },
-      ['end'] = {
-        line = end_lnum - 1,
-        character = end_col,
-      },
+  local gopls = vim.lsp.get_clients({ bufnr = 0, name = 'gopls' })
+  if not gopls then
+    return
+  end
+  local params = vim.lsp.util.make_range_params(0, gopls[1].offset_encoding)
+  params.range = {
+    start = {
+      line = start_lnum - 1,
+      character = start_col,
+    },
+    ['end'] = {
+      line = end_lnum - 1,
+      character = end_col,
+    },
   }
   return params
 end
@@ -302,7 +302,13 @@ M.codeaction = function(args)
   })
 
   hdlr = hdlr or function() end
-  local params = vim.lsp.util.make_range_params()
+
+  local gopls = M.client()
+  if not gopls then
+    log('gopls not found')
+    return
+  end
+  local params = vim.lsp.util.make_range_params(0, gopls.offset_encoding)
   -- check visual mode
   if range then
     params = range_args()
@@ -314,7 +320,6 @@ M.codeaction = function(args)
     params.context = { only = { only } }
   end
   local bufnr = vim.api.nvim_get_current_buf()
-  local gopls = M.client()
   if gopls == nil then
     log('gopls not found')
     return hdlr()
@@ -324,7 +329,7 @@ M.codeaction = function(args)
 
   local function apply_action(action)
     log('apply_action', action, ctx)
-    if action.edit then
+    if vim.fn.empty(action.edit) == 0 then
       vim.lsp.util.apply_workspace_edit(action.edit, gopls.offset_encoding)
     end
     if action.command then
@@ -565,8 +570,12 @@ function M.hover_returns()
   if s == nil then
     return
   end
+  local gopls = vim.lsp.get_clients({ bufnr = 0, name = 'gopls' })
+  if not gopls then
+    return
+  end
 
-  local params = util.make_position_params()
+  local params = util.make_position_params(0, gopls[1].offset_encoding)
   params.position.character = e - 1
   log(params)
   request('textDocument/hover', params, function(err, result, ctx)
@@ -585,7 +594,12 @@ function M.document_symbols(opts)
   opts = opts or {}
 
   local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
-  local params = vim.lsp.util.make_position_params()
+
+  local gopls = vim.lsp.get_clients({ bufnr = bufnr, name = 'gopls' })
+  if not gopls then
+    return
+  end
+  local params = vim.lsp.util.make_position_params(0, gopls[1].offset_encoding)
   params.context = { includeDeclaration = true }
   params.query = opts.prompt or ''
   local symbols

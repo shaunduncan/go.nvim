@@ -2,8 +2,7 @@
 local M = {}
 local utils = require('go.utils')
 local log = utils.log
--- local trace = utils.trace
-local trace = log
+local trace = utils.trace
 local empty = utils.empty
 local ginkgo = require('go.ginkgo')
 local getopt = require('go.alt_getopt')
@@ -68,9 +67,6 @@ M.efm = function()
   return efm
 end
 local parse = vim.treesitter.query.parse
-if parse == nil then
-  parse = vim.treesitter.query.parse_query
-end
 
 -- return "-tags=tag1,tag2"
 M.get_build_tags = function(args, tbl)
@@ -122,6 +118,7 @@ local function get_test_filebufnr()
     fn = vfn.fnamemodify(fn, ':p') -- expand to full path
     -- check if file exists
     if vfn.filereadable(fn) == 0 then
+      vim.notify('no test file found for ' .. fn, vim.log.levels.WARN)
       return 0, 'no test file'
     end
     local uri = vim.uri_from_fname(fn)
@@ -221,7 +218,7 @@ local function cmd_builder(path, args)
     table.insert(cmd, optarg['P'])
   end
 
-  log(optarg)
+  log('optargs', optarg)
   if optarg['r'] then
     log('run test', optarg['r'])
     table.insert(cmd, '-test.run')
@@ -418,20 +415,30 @@ M.get_test_func_name = function()
   return ns
 end
 
+local function spaceto(testcase_name)
+  -- convert 'test name' to 'test_name'
+  return string.gsub(testcase_name, ' ', '_')
+end
+
 M.get_testcase_name = function()
   local tc_name = require('go.ts.go').get_tbl_testcase_node_name()
   if not empty(tc_name) then
-    return tc_name
+    log('tc name', tc_name)
+    return spaceto(tc_name)
   end
   tc_name = require('go.ts.go').get_sub_testcase_name()
   if not empty(tc_name) then
-    return tc_name
+    log('sub name', tc_name)
+    return spaceto(tc_name)
   end
   return nil
 end
 
 local function format_test_name(name)
   name = name:gsub('"', '')
+  if not _GO_NVIM_CFG.gotest_case_exact_match then
+    return name
+  end
   return string.format([['^\Q%s\E$']], name)
 end
 
@@ -447,12 +454,12 @@ local function run_tests_with_ts_node(args, func_node, tblcase_ns)
     end
   end
 
-  if test_runner == 'ginkgo' then
+  if test_runner == 'ginkgo' or ginkgo.is_ginkgo_file() then
     return ginkgo.test_func(args)
   end
 
   if optarg['s'] then
-    return M.select_tests()
+    return M.select_tests(args)
   end
   if func_node == nil or func_node.name == nil then
     return
@@ -460,9 +467,11 @@ local function run_tests_with_ts_node(args, func_node, tblcase_ns)
 
   local test_name_path = format_test_name(func_node.name)
 
+  log(test_name_path, tblcase_ns)
   if tblcase_ns then
-    test_name_path = test_name_path .. '/' .. format_test_name(tblcase_ns)
+    test_name_path = string.format([['^\Q%s\E/\Q%s\E$']], func_node.name, tblcase_ns)
   end
+  log(test_name_path)
 
   if func_node.name:find('Bench') then
     local bench = '-test.bench=' .. test_name_path
@@ -511,18 +520,20 @@ end
 M.test_func = function(...)
   local args = { ... } or {}
   log(args)
-
-  local ns = M.get_test_func_name()
-  if empty(ns) then
-    return M.select_tests()
-  end
-
-  if not vim.api.nvim_get_runtime_file('parser' .. sep .. 'go.so', false)[1] then
+  local bufnr = get_test_filebufnr()
+  local p = vim.treesitter.get_parser(bufnr, 'go')
+  if not p then
     --   require('nvim-treesitter.install').commands.TSInstallSync['run!']('go')
     vim.notify(
-      'go treesitter parser not found, please Run `:TSInstallSync go`',
+      'go treesitter parser not found for file '
+        .. vim.fn.bufname()
+        .. ' please Run `:TSInstallSync go` ',
       vim.log.levels.WARN
     )
+  end
+  local ns = M.get_test_func_name()
+  if empty(ns) then
+    return M.select_tests(args)
   end
   return run_tests_with_ts_node(args, ns)
 end
@@ -530,7 +541,6 @@ end
 --options {s:select, F: floaterm}
 M.test_tblcase = function(...)
   local args = { ... }
-  log(args)
 
   local ns = M.get_test_func_name()
   if empty(ns) then
@@ -596,17 +606,17 @@ M.test_file = function(...)
     return
   end
 
-  local test_runner = _GO_NVIM_CFG.go
-  if _GO_NVIM_CFG.test_runner ~= 'go' then
-    test_runner = _GO_NVIM_CFG.test_runner
-    if not install(test_runner) then
-      test_runner = 'go'
-    end
-    if test_runner == 'ginkgo' then
-      ginkgo.test_file(...)
-    end
-  end
-
+  -- local test_runner = _GO_NVIM_CFG.go
+  -- if _GO_NVIM_CFG.test_runner ~= 'go' then
+  --   test_runner = _GO_NVIM_CFG.test_runner
+  --   if not install(test_runner) then
+  --     test_runner = 'go'
+  --   end
+  --   if test_runner == 'ginkgo' or ginkgo.is_ginkgo_file() then
+  --     ginkgo.test_file(...)
+  --   end
+  -- end
+  --
   local relpath = utils.rel_path(true)
   log(relpath)
   --
@@ -677,10 +687,16 @@ end
 -- https://github.com/rentziass/dotfiles/blob/master/vim/.config/nvim/lua/rentziass/lsp/go_tests.lua
 M.run_file = function()
   local bufnr = vim.api.nvim_get_current_buf()
-  local tree = vim.treesitter.get_parser(bufnr):parse()[1]
+  local parser = vim.treesitter.get_parser(bufnr, 'go')
+  if not parser then
+    vim.notify('go treesitter parser not found for ' .. vim.fn.bufname(), vim.log.levels.WARN)
+    return log('no ts parser found')
+  end
+  local tree = parser:parse()[1]
   local query = parse('go', require('go.ts.textobjects').query_test_func)
 
   local test_names = {}
+  local get_node_text = vim.treesitter.get_node_text
   for id, node in query:iter_captures(tree:root(), bufnr, 0, -1) do
     local name = query.captures[id] -- name of the capture in the query
     if name == 'test_name' then
@@ -700,18 +716,20 @@ M.get_testfunc = function()
   local bufnr = get_test_filebufnr()
 
   -- Note: the buffer may not be loaded yet
-  local ok, parser = pcall(vim.treesitter.get_parser, bufnr)
-  if not ok or not parser then
+  local parser = vim.treesitter.get_parser(bufnr, 'go')
+  if not parser then
+    vim.notify('go treesitter parser not found for ' .. vim.fn.bufname(), vim.log.levels.WARN)
     return log('no parser found')
   end
-  local tree = parser:parse()
-  tree = tree[1]
+  local tree = parser:parse()[1]
   local query = parse('go', require('go.ts.go').query_test_func)
 
   local test_names = {}
+
+  local get_node_text = vim.treesitter.get_node_text
   for id, node in query:iter_captures(tree:root(), bufnr, 0, -1) do
     local name = query.captures[id] -- name of the capture in the query
-    log(node)
+    -- log(node)
     if name == 'test_name' then
       table.insert(test_names, utils.get_node_text(node, bufnr))
     end
@@ -721,7 +739,7 @@ M.get_testfunc = function()
 end
 
 -- GUI to select test?
-M.select_tests = function()
+M.select_tests = function(args)
   local original_select = vim.ui.select
 
   vim.ui.select = _GO_NVIM_CFG.go_select()
@@ -734,8 +752,21 @@ M.select_tests = function()
     if not item then
       return
     end
+
     local uri = vim.uri_from_bufnr(0)
+    local fpath = M.get_test_path()
+    local cmd_args, optarg = cmd_builder(fpath, args)
     log(uri, item, idx)
+
+    if optarg['F'] or _GO_NVIM_CFG.run_in_floaterm then
+      table.insert(cmd_args, '-test.run=' .. format_test_name(item))
+
+      local term = require('go.term').run
+      log(cmd_args)
+      term({ cmd = cmd_args, autoclose = false })
+      return
+    end
+
     vim.schedule(function()
       vim.lsp.buf.execute_command({
         command = 'gopls.run_tests',

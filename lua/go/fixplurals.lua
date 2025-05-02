@@ -3,9 +3,12 @@
 local ts_utils = require("nvim-treesitter.ts_utils")
 
 local info = require("go.utils").info
-local get_node_text = require('go.utils').get_node_text
+local get_node_text = vim.treesitter.get_node_text
 local function fixplurals()
   local n = ts_utils.get_node_at_cursor()
+  if not n then
+    return info("no node found")
+  end
   local p = n:parent()
   if p:type() ~= "parameter_declaration" then
     return info("not in parameter declaration")

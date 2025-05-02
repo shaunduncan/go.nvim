@@ -53,11 +53,69 @@ local function binary_check()
     warn('curl is not installed, gocheat will not work.')
   end
 
-  local parser_path = vim.api.nvim_get_runtime_file('parser' .. sep .. 'go.so', false)[1]
-  if not parser_path then
-    warn('go treesitter parser not found, please Run `:TSInstallSync go`')
+  -- check golangci-lint version
+  local ret = vim.system({ 'golangci-lint', '--version' }, { text = true }):wait()
+  if ret.code ~= 0 then
     no_err = false
+    warn('golangci-lint is not installed, GoLint will not work.')
   end
+  -- check version, sample output "golangci-lint has version v2.0.1 built ..." or "golangci-lint has version 2.0.1 built ..."
+  local version = ret.stdout:match('%sv?(%d+%.%d+)')
+  if version then
+    local major, _ = version:match('(%d+)%.(%d+)')
+    print(major)
+    if tonumber(major) < 2 then
+      no_err = false
+      warn('please update golangci-lint to v2 and update .golangci.yml')
+      return
+    else
+      info('golangci-lint version: ' .. version)
+    end
+  else
+    no_err = false
+    warn('golangci-lint version not found, please update to v2.x.x')
+    return
+  end
+
+  local required_parsers = {
+    'go',
+  }
+  local optional_parsers = {
+    'gowork',
+    'gomod',
+    'gosum',
+    'sql',
+    'gotmpl',
+    'json',
+    'comment',
+  }
+
+  local checkparser = function(parsers, required)
+    local req = ' is required'
+    if not required then
+      req = ' is optional'
+    end
+    for _, parser in ipairs(parsers) do
+      local parser_path =
+        vim.api.nvim_get_runtime_file('parser' .. sep .. parser .. '.so', false)[1]
+      if not parser_path then
+        warn(
+          'treesitter parser '
+            .. parser
+            .. req
+            .. ' but it is not found, please Run `:TSInstallSync '
+            .. parser
+            .. '`'
+            .. ' to install or some features may not work'
+        )
+        no_err = false
+      else
+        info('treesitter parser ' .. parser .. ' found')
+      end
+    end
+  end
+  checkparser(required_parsers, true)
+  checkparser(optional_parsers, false)
 
   if no_err then
     ok('All binaries installed')

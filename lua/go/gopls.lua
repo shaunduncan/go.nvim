@@ -177,7 +177,12 @@ M.import = function(path)
 end
 
 M.change_signature = function()
-  local params = vim.lsp.util.make_range_params()
+
+  local gopls = vim.lsp.get_clients({ bufnr = 0, name = 'gopls' })
+  if not gopls then
+    return
+  end
+  local params = vim.lsp.util.make_range_params(0, gopls[1].offset_encoding)
 
   if params.range['start'].character == params.range['end'].character then
     log('please select a function signature', params.range)
@@ -382,7 +387,7 @@ M.setups = function()
           regenerate_cgo = true,
           upgrade_dependency = true,
         },
-        hints = {},
+        hints = vim.empty_dict(),
         usePlaceholders = true,
         completeUnimported = true,
         staticcheck = true,
@@ -391,8 +396,9 @@ M.setups = function()
         diagnosticsDelay = diagDelay,
         diagnosticsTrigger = diagTrigger,
         symbolMatcher = 'FastFuzzy',
-        semanticTokens = true,
-        noSemanticString = true, -- disable semantic string tokens so we can use treesitter highlight injection
+        semanticTokens = _GO_NVIM_CFG.lsp_semantic_highlights or false, -- default to false as treesitter is better
+        -- semanticTokenTypes = { keyword = true },
+        -- semanticTokenModifiers = { definition = true },
         vulncheck = 'Imports',
         ['local'] = get_current_gomod(),
         gofumpt = _GO_NVIM_CFG.lsp_gofumpt or false, -- true|false, -- turn on for new repos, gofmpt is good but also create code turmoils
@@ -423,7 +429,7 @@ M.setups = function()
     setups.settings.gopls.buildFlags = { tags }
   end
 
-  if _GO_NVIM_CFG.lsp_inlay_hints.enable and vim.fn.has('nvim-0.10') then
+  if vim.fn.has('nvim-0.10') then
     setups.settings.gopls = vim.tbl_deep_extend('keep', setups.settings.gopls, {
       hints = {
         assignVariableTypes = true,

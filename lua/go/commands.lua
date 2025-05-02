@@ -2,6 +2,17 @@ local vfn = vim.fn
 
 local utils = require('go.utils')
 local create_cmd = function(cmd, func, opt)
+  if _GO_NVIM_CFG.remap_commands then
+    local remap = _GO_NVIM_CFG.remap_commands
+    if remap[cmd] ~= nil then
+      if type(remap[cmd]) == 'string' then
+        cmd = remap[cmd] -- remap
+      elseif type(remap[cmd]) == 'boolean' and remap[cmd] == false then
+        return -- disable
+      end
+    end
+  end
+
   opt = vim.tbl_extend('force', { desc = 'go.nvim ' .. cmd }, opt or {})
   vim.api.nvim_create_user_command(cmd, func, opt)
 end
@@ -236,9 +247,37 @@ return {
       nargs = '*',
     })
 
-    vim.cmd(
-      [[command! GoLint         :setl makeprg=golangci-lint\ run\ --print-issued-lines=false\ --exclude-use-default=false\ --out-format=line-number | :GoMake]]
+    local lint_cfg = _GO_NVIM_CFG.golangci_lint or {default = 'standard'}
+    local default = [[\ --default=]] .. lint_cfg.default
+    local disable = lint_cfg.disable or {}
+    local enable = lint_cfg.enable or {}
+    local enable_only = lint_cfg.enable_only or {}
+    local enable_str = ''
+    local no_config = lint_cfg.no_config and [[\ --no-config]] or ''
+    local config_path = (lint_cfg.config and [[\ --config=]] .. lint_cfg.config) or ''
+
+    local disable_str = ''
+    if #enable > 0 then
+      enable_str = [[\ --enable=]] .. table.concat(enable, ',')
+    end
+    if #disable > 0 then
+      disable_str = [[\ --disable=]] .. table.concat(disable, ',')
+    end
+    if #enable_only > 0 then
+      enable_only_str = [[\ --enable-only=]] .. table.concat(enable_only, ',')
+    end
+
+
+    local enable_only_str = ''
+    local null = '/dev/null'
+
+    if utils.is_windows() then
+      null = 'NUL'
+    end
+    local cmd_str = string.format(
+      [[command! -nargs=* -complete=customlist,v:lua.package.loaded.go.package_complete GoLint :setl makeprg=golangci-lint\ run\ --output.json.path=%s\ --output.text.path=stdout\ --output.text.print-issued-lines=false\ --output.text.colors=false\ --show-stats=false%s%s%s%s%s%s | :GoMake ]], null, default, config_path, no_config, disable_str, enable_str, enable_only_str
     )
+    vim.cmd(cmd_str)
 
     create_cmd('GoProject', function(opts)
       require('go.project').setup()
@@ -285,6 +324,23 @@ return {
     create_cmd('GoModVendor', function(opts)
       require('go.mod').run('vendor', unpack(opts.fargs))
     end, { nargs = '*' })
+    create_cmd('GoModDnld', function(opts)
+      require('go.mod').run('download', unpack(opts.fargs))
+    end, { nargs = '*' })
+
+    create_cmd('GoModGraph', function(opts)
+      require('go.mod').run('graph', unpack(opts.fargs))
+    end, { nargs = '*' })
+    create_cmd('GoModWhy', function(opts)
+      if #opts.fargs == 0 then
+        local m = require('go.mod').get_mod()
+        if m then
+          require('go.mod').run('why', m)
+          return
+        end
+      end
+      require('go.mod').run('why', unpack(opts.fargs))
+    end, { nargs = '*' })
     create_cmd('GoModInit', function(opts)
       require('go.mod').run('init', unpack(opts.fargs))
     end, { nargs = '*' })
@@ -296,11 +352,7 @@ return {
       require('go.codelens').run_action()
     end)
     create_cmd('GoCodeAction', function(t)
-      if t.range ~= 0 then
-        require('go.codeaction').run_range_code_action({ t.line1, t.line2 })
-      else
-        require('go.codeaction').run_code_action()
-      end
+      require('go.codeaction').run_code_action(t)
     end, { range = true })
 
     create_cmd('GoModifyTag', function(opts)

@@ -1,10 +1,6 @@
 local api = vim.api
 
-local HAS09 = vim.fn.has('nvim-0.9') == 1
 local get_node_text = vim.treesitter.get_node_text
-if not HAS09 then
-  local get_node_text = vim.treesitter.query.get_node_text
-end
 local ts_utils = require('nvim-treesitter.ts_utils')
 local util = require('go.utils')
 local log = util.log
@@ -52,7 +48,7 @@ local function get_definitions(bufnr)
           and node:parent()
           and string.find(node:parent():type(), 'parameter_declaration')
         then
-          log('parameter_declaration skip')
+          trace('parameter_declaration skip')
           return
         end
         nodes_set[start] = { node = node, type = match or '' }
