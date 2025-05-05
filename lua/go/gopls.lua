@@ -82,20 +82,20 @@ local function apply_changes(cmd, args)
   end
   log('applying changes', cmd, args)
   gopls.request('workspace/executeCommand', {
-    command = cmd,
-    arguments = args,
-  }, function(_err, changes)
-    if _err then
-      vim.notify(vim.inspect(_err), vim.log.levels.INFO)
-      log('error', _err)
-    end
-    if not changes or not changes.documentChanges then
-      log('no resolved changes', changes)
-      return
-    end
-    log('applying changes', changes)
-    vim.lsp.util.apply_workspace_edit(changes, gopls.offset_encoding)
-  end, bufnr)
+                  command = cmd,
+                  arguments = args,
+                }, function(_err, changes)
+                  if _err then
+                    vim.notify(vim.inspect(_err), vim.log.levels.INFO)
+                    log('error', _err)
+                  end
+                  if not changes or not changes.documentChanges then
+                    log('no resolved changes', changes)
+                    return
+                  end
+                  log('applying changes', changes)
+                  vim.lsp.util.apply_workspace_edit(changes, gopls.offset_encoding)
+                end, bufnr)
 end
 
 for _, gopls_cmd in ipairs(gopls_cmds) do
@@ -121,10 +121,10 @@ for _, gopls_cmd in ipairs(gopls_cmds) do
 
     local ft = vim.bo.filetype
     if
-      ft == 'gomod'
-      or ft == 'gosum'
-      or gopls_cmd_name == 'tidy'
-      or gopls_cmd_name == 'update_go_sum'
+        ft == 'gomod'
+        or ft == 'gosum'
+        or gopls_cmd_name == 'tidy'
+        or gopls_cmd_name == 'update_go_sum'
     then
       arguments[1].URIs = { uri }
       arguments[1].URI = nil
@@ -134,9 +134,9 @@ for _, gopls_cmd in ipairs(gopls_cmds) do
     log(gopls_cmd_name, arguments)
     if vim.tbl_contains(gopls_with_result, gopls_cmd) then
       local resp = gopls.request_sync('workspace/executeCommand', {
-        command = gopls_cmd,
-        arguments = arguments,
-      }, 2000, b)
+                                        command = gopls_cmd,
+                                        arguments = arguments,
+                                      }, 2000, b)
 
       check_for_error(resp)
       log(resp)
@@ -150,20 +150,20 @@ for _, gopls_cmd in ipairs(gopls_cmds) do
         -- it likely to be a edit command
         -- but execute_command may not working in the way gppls want
         local resp = gopls.request('workspace/executeCommand', {
-          command = gopls_cmd,
-          arguments = arguments,
-        }, function(err, result)
-          if err then
-            log('error', err)
-            vim.notify(vim.inspect(err), vim.log.levels.INFO)
-            return
-          end
+                                     command = gopls_cmd,
+                                     arguments = arguments,
+                                   }, function(err, result)
+                                     if err then
+                                       log('error', err)
+                                       vim.notify(vim.inspect(err), vim.log.levels.INFO)
+                                       return
+                                     end
 
-          check_for_error(result)
-          if callback then
-            callback(result)
-          end
-        end, b)
+                                     check_for_error(result)
+                                     if callback then
+                                       callback(result)
+                                     end
+                                   end, b)
       end)
     end
   end
@@ -172,17 +172,16 @@ end
 M.cmds = cmds
 M.import = function(path)
   cmds.add_import({
-    ImportPath = path,
-  }, require('go.format').gofmt)
+                    ImportPath = path,
+                  }, require('go.format').gofmt)
 end
 
 M.change_signature = function()
-
   local gopls = vim.lsp.get_clients({ bufnr = 0, name = 'gopls' })
   if not gopls then
     return
   end
-  local params = vim.lsp.util.make_range_params(0, gopls[1].offset_encoding)
+  local params = vim.lsp.util.make_range_params(0, gopls[1].offset_encoding or 'utf-16')
 
   if params.range['start'].character == params.range['end'].character then
     log('please select a function signature', params.range)
@@ -315,7 +314,7 @@ local range_format = 'textDocument/rangeFormatting'
 local formatting = 'textDocument/formatting'
 M.setups = function()
   local update_in_insert = _GO_NVIM_CFG.diagnostic and _GO_NVIM_CFG.diagnostic.update_in_insert
-    or false
+      or false
   local diagTrigger = update_in_insert and 'Edit' or 'Save'
   local diagDelay = update_in_insert and '1s' or '250ms'
   local setups = {
@@ -379,7 +378,7 @@ M.setups = function()
           useany = true,
         },
         codelenses = {
-          generate = true, -- show the `go generate` lens.
+          generate = true,   -- show the `go generate` lens.
           gc_details = true, -- Show a code lens toggling the display of gc's choices.
           test = true,
           tidy = true,
