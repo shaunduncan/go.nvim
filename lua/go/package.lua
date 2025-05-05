@@ -43,8 +43,8 @@ local complete = function(sep)
   end
   if vim.fn.empty(pkgs) == 0 then
     vim.defer_fn(function()
-      pf()
-    end, 1)
+                   pf()
+                 end, 1)
     return pkgs
   else
     pf()
@@ -272,7 +272,7 @@ local function handle_data_out(_, data, ev)
         local next_line = data[i + 1]
         if next_line then
           local next_sp = string.match(next_line, '^(%s*)') -- one tab in front
-          if next_sp and #next_sp == 1 then -- tab size 1
+          if next_sp and #next_sp == 1 then                 -- tab size 1
             next_line = next_line .. '{}'
             data[i + 1] = next_line
           else
@@ -294,7 +294,6 @@ local function handle_data_out(_, data, ev)
   local uri = vim.uri_from_fname(fname)
   local bufnr = vim.uri_to_bufnr(uri)
   vim.fn.writefile(pkg_info, fname)
-
 end
 
 local gen_pkg_info = function(cmd, pkg, arg, rerender)

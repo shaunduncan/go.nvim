@@ -5,7 +5,7 @@ local uv = vim.loop
 local os_name = uv.os_uname().sysname
 local is_windows = os_name == 'Windows' or os_name == 'Windows_NT' or os_name:find('MINGW')
 local is_git_shell = is_windows
-  and (vim.fn.exists('$SHELL') and vim.fn.expand('$SHELL'):find('bash.exe') ~= nil)
+    and (vim.fn.exists('$SHELL') and vim.fn.expand('$SHELL'):find('bash.exe') ~= nil)
 
 utils.get_node_text = vim.treesitter.get_node_text
 
@@ -190,7 +190,7 @@ end
 
 utils.map = function(modes, key, result, options)
   options =
-    utils.merge({ noremap = true, silent = false, expr = false, nowait = false }, options or {})
+      utils.merge({ noremap = true, silent = false, expr = false, nowait = false }, options or {})
   local buffer = options.buffer
   options.buffer = nil
 
@@ -398,6 +398,7 @@ function utils.nvim_load_mapping(mapping)
     end
   end
 end
+
 utils.loaded = {}
 function utils.load_plugin(name, modulename)
   assert(name ~= nil, 'plugin should not empty')
@@ -477,7 +478,7 @@ end
 
 function utils.relative_to_cwd(name)
   local rel = fn.isdirectory(name) == 0 and fn.fnamemodify(name, ':h:.')
-    or fn.fnamemodify(name, ':.')
+      or fn.fnamemodify(name, ':.')
   if rel == '.' then
     return '.'
   else
@@ -626,8 +627,8 @@ function utils.restart(cmd_args)
   local configs = require('lspconfig.configs')
   if configs['gopls'] ~= nil and configs['gopls'].launch then
     vim.defer_fn(function()
-      configs['gopls'].launch()
-    end, 500)
+                   configs['gopls'].launch()
+                 end, 500)
     return
   else
     vim.lsp.enable('gopls')
@@ -788,7 +789,7 @@ function utils.uuid()
 end
 
 local lorem =
-  'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum'
+'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum'
 function utils.lorem()
   return lorem
 end
@@ -895,7 +896,7 @@ utils.debounce = function(func, ms)
         pcall(vim.schedule_wrap(func), unpack(argv))
       end)
     else
-      timer:stop() -- Stop the currently running timer
+      timer:stop()                  -- Stop the currently running timer
       timer:start(ms, 0, function() -- Restart it with the latest call
         timer:stop()
         pcall(vim.schedule_wrap(func), unpack(argv))
@@ -1012,8 +1013,8 @@ utils.yield_for = function(ms)
     return
   end
   vim.defer_fn(function()
-    coroutine.resume(co)
-  end, ms)
+                 coroutine.resume(co)
+               end, ms)
   coroutine.yield()
 end
 
